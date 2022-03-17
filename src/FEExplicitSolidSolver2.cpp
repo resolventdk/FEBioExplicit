@@ -491,7 +491,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 //!
 //!           /
 //!          |  >=  0 --> dof j of node i is a free dof
-//! ID[i][j] <  == -1 --> dof j of node i is a fixed (no equation assigned too) hjs: no reaction stored?
+//! ID[i][j] <  == -1 --> dof j of node i is a fixed (no equation assigned too) (hjs: no reactions stored)
 //!          |  <  -1 --> dof j of node i is constrained and has equation nr = -ID[i][j]-2
 //!           \
 //!
@@ -506,7 +506,7 @@ bool FEExplicitSolidSolver2::InitEquations()
 	m_nreq = m_neq;
 
 	// Next, we assign equation numbers to the rigid body degrees of freedom
-	int neq = m_rigidSolver.InitEquations(m_neq);
+	int neq = m_rigidSolver.InitEquations(m_neq); // hjs: avoid dependency of rigidSolver (only used here)
 	if (neq == -1) return false; 
 	else m_neq = neq;
 
@@ -529,7 +529,7 @@ bool FEExplicitSolidSolver2::Init()
 	m_Fr.assign(neq, 0);
 	m_ui.assign(neq, 0);
 	m_Ut.assign(neq, 0);
-	m_Mi.assign(neq, 0.0);
+	m_Mi.assign(neq, 0.0); // hjs: use nreq
 
 	GetFEModel()->Update();
 
@@ -843,7 +843,7 @@ void FEExplicitSolidSolver2::PrepStep()
 	vector<double> dummy(m_neq, 0.0);
 	zero(m_Fn);
 	FEResidualVector Fn(*GetFEModel(), m_Fn, dummy);
-	NodalLoads(Fn, tp);
+	NodalLoads(Fn, tp); // warning, will ignore nodal loads applied to rigid body nodes
 
 	// apply prescribed displacements
 	// we save the prescribed displacements increments in the ui vector
@@ -1002,12 +1002,19 @@ bool FEExplicitSolidSolver2::DoSolve()
 		
 		int n;
 		
-		// acceleration and velocity of center of mass
-		n = RB.m_LM[0]; if (n >= 0) { un[n] = RB.m_rt.x - RB.m_r0.x; vn[n] = RB.m_vt.x; an[n] = RB.m_at.x; }
-		n = RB.m_LM[1]; if (n >= 0) { un[n] = RB.m_rt.y - RB.m_r0.y; vn[n] = RB.m_vt.y; an[n] = RB.m_at.y; }
-		n = RB.m_LM[2]; if (n >= 0) { un[n] = RB.m_rt.z - RB.m_r0.z; vn[n] = RB.m_vt.z; an[n] = RB.m_at.z; }
+		// TODO: does RB.m_du hold the correct values for this?
+		// linear acceleration and velocity of center of mass
+		// if ((n = RB.m_LM[0]) >= 0) { un[n] = RB.m_rt.x - RB.m_r0.x; vn[n] = RB.m_vt.x; an[n] = RB.m_at.x; }
+		// if ((n = RB.m_LM[1]) >= 0) { un[n] = RB.m_rt.y - RB.m_r0.y; vn[n] = RB.m_vt.y; an[n] = RB.m_at.y; }
+		// if ((n = RB.m_LM[2]) >= 0) { un[n] = RB.m_rt.z - RB.m_r0.z; vn[n] = RB.m_vt.z; an[n] = RB.m_at.z; }		
+		if ((n = RB.m_LM[0]) >= 0) { un[n] = RB.m_du[n]; vn[n] = RB.m_vt.x; an[n] = RB.m_at.x; }
+		if ((n = RB.m_LM[1]) >= 0) { un[n] = RB.m_du[n]; vn[n] = RB.m_vt.y; an[n] = RB.m_at.y; }
+		if ((n = RB.m_LM[2]) >= 0) { un[n] = RB.m_du[n]; vn[n] = RB.m_vt.z; an[n] = RB.m_at.z; }
 		
-		// angular acceleration and velocity of rigid body
+		// angular acceleration and velocity of center of mass
+		if ((n = RB.m_LM[3]) >= 0) { un[n] = RB.m_du[n]; vn[n] = RB.m_wt.x; an[n] = RB.m_alt.x; }
+		if ((n = RB.m_LM[4]) >= 0) { un[n] = RB.m_du[n]; vn[n] = RB.m_wt.y; an[n] = RB.m_alt.y; }
+		if ((n = RB.m_LM[5]) >= 0) { un[n] = RB.m_du[n]; vn[n] = RB.m_wt.z; an[n] = RB.m_alt.z; }
 	}
 
 	// velocity predictor
@@ -1027,8 +1034,7 @@ bool FEExplicitSolidSolver2::DoSolve()
 	// evaluate acceleration
 	Residual(m_R1);
 	vector<double> anp1(m_neq);
-	// hjs: TODO: handle flex only
-	for (int i = 0; i < m_neq; ++i)
+	for (int i = 0; i < m_neq; ++i) // hjs: use nreq
 	{
 		anp1[i] = m_R1[i] * m_Mi[i];
 	}
@@ -1044,29 +1050,35 @@ bool FEExplicitSolidSolver2::DoSolve()
 		double M = RB.m_mass;
 		double M_inv = 1.0 / M; 
 
-		// translational velocity
-		n = RB.m_LM[0]; if (n >= 0) anp1[n] = m_R1[n] * M_inv;
-		n = RB.m_LM[1]; if (n >= 0) anp1[n] = m_R1[n] * M_inv;
-		n = RB.m_LM[2]; if (n >= 0) anp1[n] = m_R1[n] * M_inv;
+		// compute translational acceleration and store in vector
+		if ((n = RB.m_LM[0]) >= 0) anp1[n] = m_R1[n] * M_inv;
+		if ((n = RB.m_LM[1]) >= 0) anp1[n] = m_R1[n] * M_inv;
+		if ((n = RB.m_LM[2]) >= 0) anp1[n] = m_R1[n] * M_inv;
 
+		// If all rotational dofs are constrained, do not try to compute angular acceleration
+		if ( RB.m_LM[3] < 0 &&  RB.m_LM[4] < 0 && RB.m_LM[5] < 0) continue;
+		// TODO: what to do if rotation is partly constrained??
+		if ( RB.m_LM[3] < 0 ||  RB.m_LM[4] < 0 || RB.m_LM[5] < 0 ){
+			feLogError("Explicit solver cannot handle partly constrained rotational dofs of rigid body %d\n", i);
+			assert(false);
+		}
+		
 		// evaluate mass moment of inertia at t
-		if ( RB.m_LM[3] < 0 &&  RB.m_LM[4] < 0 && RB.m_LM[5] < 0) continue;  // do not bother inverting
-
 		mat3d Rt = RB.GetRotation().RotationMatrix();
 		mat3ds Jt = (Rt*RB.m_moi*Rt.transpose()).sym();
 		mat3ds Jt_inv = Jt.inverse();
 
-		// extract torque
+		// get torque
 		vec3d RB_torque = vec3d(0.0, 0.0, 0.0);
 		n = RB.m_LM[3]; RB_torque.x = m_R1[n];
 		n = RB.m_LM[4]; RB_torque.y = m_R1[n];
 		n = RB.m_LM[5]; RB_torque.z = m_R1[n];
 
-		// compute angular velocity
-		vec3d RB_rotvel = Jt_inv * RB_torque;		
-		n = RB.m_LM[3]; if (n >= 0) anp1[n] = RB_rotvel.x;
-		n = RB.m_LM[4]; if (n >= 0) anp1[n] = RB_rotvel.y;
-		n = RB.m_LM[5]; if (n >= 0) anp1[n] = RB_rotvel.z;
+		// compute angular acceleration and store in vector
+		vec3d RB_al = Jt_inv * RB_torque;		
+		n = RB.m_LM[3]; anp1[n] = RB_al.x;
+		n = RB.m_LM[4]; anp1[n] = RB_al.y;
+		n = RB.m_LM[5]; anp1[n] = RB_al.z;
 		
 	}
 
@@ -1093,23 +1105,22 @@ bool FEExplicitSolidSolver2::DoSolve()
 		if ((n = node.m_ID[m_dofSU[1]]) >= 0) { node.set(m_dofSV[1], vnp1[n]); node.set(m_dofSA[1], anp1[n]); }
 		if ((n = node.m_ID[m_dofSU[2]]) >= 0) { node.set(m_dofSV[2], vnp1[n]); node.set(m_dofSA[2], anp1[n]); }
 	}
-
-	// handle rigid bodies, (if not constrained)
 	for (int i=0; i<fem.RigidBodies(); ++i)
 	{
 		FERigidBody& RB = *fem.GetRigidBody(i);
 		
 		int n;
 		
-		// acceleration and velocity of center of mass
-		n = RB.m_LM[0]; if (n >= 0) { RB.m_vt.x = vnp1[n]; RB.m_at.x = anp1[n]; }
-		n = RB.m_LM[1]; if (n >= 0) { RB.m_vt.y = vnp1[n]; RB.m_at.y = anp1[n]; }
-		n = RB.m_LM[2]; if (n >= 0) { RB.m_vt.z = vnp1[n]; RB.m_at.z = anp1[n]; }
-		
-		// angular acceleration and velocity of rigid body
-		// n = RB.m_LM[3]; if (n >= 0) anp1[n];
-		// n = RB.m_LM[4]; if (n >= 0) anp1[n];
-		// n = RB.m_LM[5]; if (n >= 0) anp1[n];
+		// linear acceleration and velocity of center of mass
+		if ((n = RB.m_LM[0]) >= 0) { RB.m_vt.x = vnp1[n]; RB.m_at.x = anp1[n]; }
+		if ((n = RB.m_LM[1]) >= 0) { RB.m_vt.y = vnp1[n]; RB.m_at.y = anp1[n]; }
+		if ((n = RB.m_LM[2]) >= 0) { RB.m_vt.z = vnp1[n]; RB.m_at.z = anp1[n]; }
+
+		// angular acceleration and velocity of center of mass
+		if ((n = RB.m_LM[3]) >= 0) { RB.m_wt.x = vnp1[n]; RB.m_alt.x = anp1[n]; }
+		if ((n = RB.m_LM[4]) >= 0) { RB.m_wt.y = vnp1[n]; RB.m_alt.y = anp1[n]; }
+		if ((n = RB.m_LM[5]) >= 0) { RB.m_wt.z = vnp1[n]; RB.m_alt.z = anp1[n]; }
+
 	}
 
 	// do minor iterations callbacks
@@ -1146,14 +1157,12 @@ bool FEExplicitSolidSolver2::Residual(vector<double>& R)
 	FEResidualVector RHS(fem, R, m_Fr);  // hjs: inherites from FEGlobalVector, but sums rigid body forces during assembly
 
 	// zero rigid body reaction forces
-	m_rigidSolver.Residual();
-	// // zero rigid body reaction forces
-	// int NRB = fem.RigidBodies();
-	// for (int i=0; i<NRB; ++i)
-	// {
-	// 	FERigidBody& RB = *fem.GetRigidBody(i);
-	// 	RB.m_Fr = RB.m_Mr = vec3d(0,0,0);
-	// }
+	int NRB = fem.RigidBodies();
+	for (int i=0; i<NRB; ++i)
+	{
+		FERigidBody& RB = *fem.GetRigidBody(i);
+		RB.m_Fr = RB.m_Mr = vec3d(0,0,0);
+	}
 
 	// get the mesh
 	FEMesh& mesh = fem.GetMesh();
