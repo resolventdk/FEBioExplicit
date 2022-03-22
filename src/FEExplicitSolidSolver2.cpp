@@ -237,7 +237,7 @@ void FEExplicitSolidSolver2::Clean()
 //-----------------------------------------------------------------------------
 bool FEExplicitSolidSolver2::CalculateMassMatrix()
 {
-	FEModel& fem = *GetFEModel();
+	FEMechModel& fem = static_cast<FEMechModel&>(*GetFEModel());
 	FEMesh& mesh = fem.GetMesh();
 
 	vector<double> dummy(m_Mi);
@@ -263,6 +263,9 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 			if (pbd)  // it is an elastic solid domain
 			{
 				FESolidMaterial* pme = dynamic_cast<FESolidMaterial*>(pbd->GetMaterial());
+
+				// nodal coordinates
+				vec3d r0[FEElement::MAX_NODES];
 
 				// loop over all the elements
 				for (int iel = 0; iel < pbd->Elements(); ++iel)
@@ -299,7 +302,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 						for (int j = 0; j < neln; ++j)
 						{
 							double kab = me[i][j];
-							el_lumped_mass[3 * i] += kab;
+							el_lumped_mass[3 * i    ] += kab;
 							el_lumped_mass[3 * i + 1] += kab;
 							el_lumped_mass[3 * i + 2] += kab;
 						}
@@ -307,6 +310,33 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 
 					// assemble element matrix into inv_mass vector 
 					Mi.Assemble(el.m_node, lm, el_lumped_mass);
+
+					// hjs: account for mass of rigid nodes
+					if (fem.RigidBodies() > 0)
+					{
+						for (int i = 0; i < neln; ++i)
+						{
+							FENode& node = mesh.Node(el.m_node[i]);
+							if (node.m_rid >= 0)
+							{
+									FERigidBody& RB = *fem.GetRigidBody(node.m_rid);
+																								
+									// add mass
+									double node_lumped_mass = el_lumped_mass[3 * i];
+									RB.m_mass += node_lumped_mass;
+
+									// add moment of inertia (symmetric tensor)
+									vec3d dr = node.m_r0 - RB.m_r0;
+									RB.m_moi.xx() += node_lumped_mass * (dr.y*dr.y + dr.z*dr.z);
+									RB.m_moi.yy() += node_lumped_mass * (dr.x*dr.x + dr.z*dr.z);
+									RB.m_moi.zz() += node_lumped_mass * (dr.x*dr.x + dr.y*dr.y);								
+									RB.m_moi.xy() -= node_lumped_mass * dr.x*dr.y;
+									RB.m_moi.yz() -= node_lumped_mass * dr.y*dr.z;
+									RB.m_moi.xz() -= node_lumped_mass * dr.x*dr.z;
+							}
+						}
+					}
+
 				} // loop over elements
 			}
 			else if (dynamic_cast<FEElasticShellDomain*>(&mesh.Domain(nd)))
@@ -341,6 +371,33 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 					}
 					// assemble element matrix into inv_mass vector 
 					Mi.Assemble(el.m_node, lm, el_lumped_mass);
+
+					// hjs: account for mass of rigid nodes
+					if (fem.RigidBodies() > 0)
+					{
+						for (int i = 0; i < neln; ++i)
+						{
+							FENode& node = mesh.Node(el.m_node[i]);
+							if (node.m_rid >= 0)
+							{
+									FERigidBody& RB = *fem.GetRigidBody(node.m_rid);
+																								
+									// add mass
+									double node_lumped_mass = el_lumped_mass[i];
+									RB.m_mass += node_lumped_mass;
+
+									// add moment of inertia (symmetric tensor)
+									vec3d dr = node.m_r0 - RB.m_r0;
+									RB.m_moi.xx() += node_lumped_mass * (dr.y*dr.y + dr.z*dr.z);
+									RB.m_moi.yy() += node_lumped_mass * (dr.x*dr.x + dr.z*dr.z);
+									RB.m_moi.zz() += node_lumped_mass * (dr.x*dr.x + dr.y*dr.y);								
+									RB.m_moi.xy() -= node_lumped_mass * dr.x*dr.y;
+									RB.m_moi.yz() -= node_lumped_mass * dr.y*dr.z;
+									RB.m_moi.xz() -= node_lumped_mass * dr.x*dr.z;
+							}
+						}
+					}
+
 				}
 			}
 			else
@@ -406,6 +463,33 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 
 					// assemble element matrix into inv_mass vector 
 					Mi.Assemble(el.m_node, lm, el_lumped_mass);
+
+					// hjs: account for mass of rigid nodes
+					if (fem.RigidBodies() > 0)
+					{
+						for (int i = 0; i < neln; ++i)
+						{
+							FENode& node = mesh.Node(el.m_node[i]);
+							if (node.m_rid >= 0)
+							{
+									FERigidBody& RB = *fem.GetRigidBody(node.m_rid);
+																								
+									// add mass
+									double node_lumped_mass = el_lumped_mass[3 * i];
+									RB.m_mass += node_lumped_mass;
+
+									// add moment of inertia (symmetric tensor)
+									vec3d dr = node.m_r0 - RB.m_r0;
+									RB.m_moi.xx() += node_lumped_mass * (dr.y*dr.y + dr.z*dr.z);
+									RB.m_moi.yy() += node_lumped_mass * (dr.x*dr.x + dr.z*dr.z);
+									RB.m_moi.zz() += node_lumped_mass * (dr.x*dr.x + dr.y*dr.y);								
+									RB.m_moi.xy() -= node_lumped_mass * dr.x*dr.y;
+									RB.m_moi.yz() -= node_lumped_mass * dr.y*dr.z;
+									RB.m_moi.xz() -= node_lumped_mass * dr.x*dr.z;
+							}
+						}
+					}
+
 				} // loop over elements
 			}
 			else if(dynamic_cast<FEElasticShellDomain*>(&mesh.Domain(nd)))
@@ -453,6 +537,33 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 
 					// assemble element matrix into inv_mass vector 
 					Mi.Assemble(el.m_node, lm, el_lumped_mass);
+
+					// hjs: account for mass of rigid nodes
+					if (fem.RigidBodies() > 0)
+					{
+						for (int i = 0; i < neln; ++i)
+						{
+							FENode& node = mesh.Node(el.m_node[i]);
+							if (node.m_rid >= 0)
+							{
+									FERigidBody& RB = *fem.GetRigidBody(node.m_rid);
+																								
+									// add mass
+									double node_lumped_mass = el_lumped_mass[i];
+									RB.m_mass += node_lumped_mass;
+
+									// add moment of inertia (symmetric tensor)
+									vec3d dr = node.m_r0 - RB.m_r0;
+									RB.m_moi.xx() += node_lumped_mass * (dr.y*dr.y + dr.z*dr.z);
+									RB.m_moi.yy() += node_lumped_mass * (dr.x*dr.x + dr.z*dr.z);
+									RB.m_moi.zz() += node_lumped_mass * (dr.x*dr.x + dr.y*dr.y);								
+									RB.m_moi.xy() -= node_lumped_mass * dr.x*dr.y;
+									RB.m_moi.yz() -= node_lumped_mass * dr.y*dr.z;
+									RB.m_moi.xz() -= node_lumped_mass * dr.x*dr.z;
+							}
+						}
+					}
+
 				}
 			}
 			else
