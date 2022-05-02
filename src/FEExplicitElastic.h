@@ -21,6 +21,7 @@ public:
 public:
 
 	double m_h;  // characteristic lenght of element
+	double m_c; // wavespeed
 
 };
 

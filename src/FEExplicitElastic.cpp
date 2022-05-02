@@ -91,7 +91,7 @@ mat3ds FEExplicitElastic::Stress(FEMaterialPoint& mp)
 	double dens = Density(mp);
 	double volumetricStrainRate = ep.RateOfDeformation().tr(); // tr(dEdt), E = 0.5*(L+L^T), L = duidxj
 	double h = exp.m_h;
-	double waveSpd = WaveSpeed(mp);
+	double waveSpd = exp.m_c;
 	double bv_pres = m_bv_c1(mp)*dens*h*waveSpd*volumetricStrainRate;  // linear
 	if (volumetricStrainRate < 0.0) {
 		bv_pres -= m_bv_c2(mp)*dens*h*h*volumetricStrainRate*volumetricStrainRate;  // quadratic

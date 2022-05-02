@@ -7,12 +7,13 @@
 #include "FEBioMech/FEContactInterface.h"
 #include "FEBioMech/FEElasticShellDomain.h"
 #include "FEBioMech/FEElasticSolidDomain.h"
+#include "FEBioMech/FEIsotropicElastic.h"
 #include "FEBioMech/FEMechModel.h"
+#include "FEBioMech/FEResidualVector.h"
 #include "FEBioMech/FEResidualVector.h"
 #include "FEBioMech/FERigidBody.h"
 #include "FEBioMech/FERigidMaterial.h"
 #include "FEBioMech/RigidBC.h"
-#include "FEBioMech/FEResidualVector.h"
 
 #include "FECore/FEAnalysis.h"
 #include "FECore/FELinearConstraintManager.h"
@@ -30,8 +31,6 @@
 BEGIN_FECORE_CLASS(FEExplicitSolidSolver2, FESolver)
 	ADD_PARAMETER(m_mass_lumping, "mass_lumping");
 	ADD_PARAMETER(m_dyn_damping, "dyn_damping");
-	ADD_PARAMETER(m_bv_c1, "bulk_viscosity_c1");
-	ADD_PARAMETER(m_bv_c2, "bulk_viscosity_c2");
 	ADD_PARAMETER(m_print_stride, "print_stride");
 	ADD_PARAMETER(m_adjust_step_size_safety, FE_RANGE_RIGHT_OPEN(0.0, 1.0), "adjust_step_size_safety");
 	ADD_PARAMETER(m_adjust_step_size_stride, "adjust_step_size_stride");
@@ -100,37 +99,53 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 		{
 			FEExplicitElastic* pme = dynamic_cast<FEExplicitElastic*>(pbd->GetMaterial());
 			if (pme) {
-				any_evaluated_domains = true;
 
-				// loop over all the elements	
-				for (int iel = 0; iel < pbd->Elements(); ++iel)
-				{
-					FESolidElement& el = pbd->Element(iel);
+				FEIsotropicElastic* pmi = dynamic_cast<FEIsotropicElastic*>(pme->GetElasticMaterial());
+				if (pmi){  // the actual elastic material is isotropic elastic	
 
-                    // get minimum edge lenght (squared)    
-                    double h = get_elem_hmin_alt(mesh, el);
+					any_evaluated_domains = true;
 
-					// loop Gauss points
-					int nint = el.GaussPoints();
-					for (int j = 0; j < nint; ++j)
+					// loop over all the elements	
+					for (int iel = 0; iel < pbd->Elements(); ++iel)
 					{
+						FESolidElement& el = pbd->Element(iel);
 
-						// wavespeed
-						FEMaterialPoint* mp = el.GetMaterialPoint(j);
-						double waveSpd = pme->WaveSpeed(*mp);
-						if (waveSpd < domMinWaveSpd) domMinWaveSpd = waveSpd;
+						// get minimum edge lenght (squared)    
+						double h = get_elem_hmin_alt(mesh, el);
 
-						// time step
-						double dt = 2.0 * h / waveSpd; // 2 -> scheme factor
-						if (dt < domMinDT) domMinDT = dt;
+						// loop Gauss points
+						int nint = el.GaussPoints();
+						for (int j = 0; j < nint; ++j)
+						{
 
-					} // for gauss point
-				} // for element
+							// get material parameters
+							FEMaterialPoint& mp = *el.GetMaterialPoint(j);
+							double mE = pmi->m_E(mp);
+							double mv = pmi->m_v(mp);
+							double dens = pme->Density(mp);
 
-				if (domMinDT < globalMinDT) globalMinDT = domMinDT;
-				// print domain stats
-				feLogEx(pfem, "%-19s %-7.2e %-7.2e\n", mesh.Domain(nd).GetName().c_str(), domMinWaveSpd, domMinDT);
-			}  // if isotropic elastic material
+							// lame parameters
+							double lam = (mv*mE/((1+mv)*(1-2*mv)));
+							double mu  = (0.5*mE/(1+mv));
+
+							// wavespeed
+							double waveSpd = sqrt((lam+2*mu) / dens);
+							if (waveSpd < domMinWaveSpd) domMinWaveSpd = waveSpd;
+
+							// time step
+							double dt = 2.0 * h / waveSpd; // 2 -> scheme factor
+							if (dt < domMinDT) domMinDT = dt;
+
+						} // for gauss point
+					} // for element
+
+					if (domMinDT < globalMinDT) globalMinDT = domMinDT;
+					// print domain stats
+					feLogEx(pfem, "%-19s %-7.2e %-7.2e\n", mesh.Domain(nd).GetName().c_str(), domMinWaveSpd, domMinDT);
+				} else {  // if actual elastic material is isotropic elastic
+					feLogErrorEx(pfem, "Wavespeed calculation of other materials than 'isotropic elastic' not unspoorted!");
+				}
+			} // if explicit elastic material
 		} // if elastic domain
 	} // for domain
 	feLogEx(pfem, "\n");
@@ -175,9 +190,6 @@ FEExplicitSolidSolver2::FEExplicitSolidSolver2(FEModel* pfem) :
 	m_adjust_step_size_safety = 0.8;  // default safety factor for limiting time step size
 	m_adjust_step_size_stride = 1;  // by default we adjust time step every step
 	m_print_stride = 1;  // by default we print to screen every step
-
-	m_bv_c1 = 0.06;
-	m_bv_c2 = 1.44;
 
 	// Allocate degrees of freedom
 	DOFS& dofs = pfem->GetDOFS();
@@ -1395,8 +1407,11 @@ void FEExplicitSolidSolver2::UpdateExplicitMaterialPoints(){
 		if (pbd)  // it is an elastic solid domain
 		{
 			FEExplicitElastic* pme = dynamic_cast<FEExplicitElastic*>(pbd->GetMaterial());
-			if (pme) {
-
+			if (pme) {  // it is explicit elastic solid
+				 
+				FEIsotropicElastic* pmi = dynamic_cast<FEIsotropicElastic*>(pme->GetElasticMaterial());
+				if (pmi){  // the actual elastic material is isotropic elastic
+				
 				// loop over all the elements	
 				for (int iel = 0; iel < pbd->Elements(); ++iel)
 				{
@@ -1410,10 +1425,27 @@ void FEExplicitSolidSolver2::UpdateExplicitMaterialPoints(){
 					for (int j = 0; j < nint; ++j)
 					{
 						FEMaterialPoint& mp = *el.GetMaterialPoint(j);
-						FEExplicitMaterialPoint& pt = *(mp.ExtractData<FEExplicitMaterialPoint>());
-						pt.m_h = h;
+						FEExplicitMaterialPoint& ep = *(mp.ExtractData<FEExplicitMaterialPoint>());
+						
+						double dens = pme->Density(mp);
+						double mE = pmi->m_E(mp);
+						double mv = pmi->m_v(mp);
+						
+						// lame parameters
+    					double lam = (mv*mE/((1+mv)*(1-2*mv)));
+    					double mu  = (0.5*mE/(1+mv));						
+						
+						// wavespeed
+						ep.m_c = sqrt((lam+2.0*mu)/dens);
+
+						// characteristic length
+						ep.m_h = h;
+
 					} // for gauss point
 				} // for element
+				} else {  // if actual elastic material is isotropic elastic
+					feLogError("Wavespeed calculation of other materials than 'isotropic elastic' not unspoorted!");
+				}
 			}  // if explicit elastic material
 		} // if elastic solid domain
 	} // for domain
