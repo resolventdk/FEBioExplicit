@@ -50,7 +50,7 @@ bool FEScaledDensityMapGenerator::Generate(FEDomainMap& map)
 		FESolidElement& el = *pel;
 
         // get minimum element edge lenght (squared)
-        double h2 = get_elem_hmin2_alt(mesh, el);
+        double h = get_elem_hmin_alt(mesh, el);
 
         // loop Gauss points
         int nint = el.GaussPoints();
@@ -68,7 +68,7 @@ bool FEScaledDensityMapGenerator::Generate(FEDomainMap& map)
             double mu  = (0.5*mE/(1+mv));
 
             // critical density at target dt
-            double density = 0.25 * m_dt*m_dt * (lam+2*mu) / h2; // 0.25 == 1/(2**2) -> scheme facotr
+            double density = 0.25 * m_dt*m_dt * (lam+2*mu) / (h*h); // 0.25 == 1/(2**2) -> scheme facotr
             if (density > density0){
                 map.setValue(iel, j, density);  // density needs to be increased to achieve dt
             } else {

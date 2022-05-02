@@ -55,7 +55,7 @@ double get_elem_volume(FEMesh& mesh, FESolidElement& el){
 }
 
 //-----------------------------------------------------------------------------
-double get_elem_hmin2(FEMesh& mesh, FESolidElement& el){
+double get_elem_hmin(FEMesh& mesh, FESolidElement& el){
         // get minimum edge lenght (squared)
         // TODO: wont work for quadratic elements
         double h2 = 1e99;
@@ -74,11 +74,11 @@ double get_elem_hmin2(FEMesh& mesh, FESolidElement& el){
                 }
             }
         }
-        return h2;
+        return sqrt(h2);
 }
 
 //-----------------------------------------------------------------------------
-double get_elem_hmin2_alt(FEMesh& mesh, FESolidElement& el){
+double get_elem_hmin_alt(FEMesh& mesh, FESolidElement& el){
     
     // get element volume
     double V = get_elem_volume(mesh, el);
@@ -166,5 +166,5 @@ double get_elem_hmin2_alt(FEMesh& mesh, FESolidElement& el){
     	if (hrel < hmin) hmin = hrel;
     }  // for face
 
-    return hmin*hmin;
+    return hmin;
 }

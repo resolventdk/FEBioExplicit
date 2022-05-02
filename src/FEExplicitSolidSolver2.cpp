@@ -1,12 +1,12 @@
 #include "FEExplicitSolidSolver2.h"
 #include "FEExplicitUtils.h"
+#include "FEExplicitElastic.h"
 
 #include "FEBioMech/FEBioMech.h"
 #include "FEBioMech/FEBodyForce.h"
 #include "FEBioMech/FEContactInterface.h"
 #include "FEBioMech/FEElasticShellDomain.h"
 #include "FEBioMech/FEElasticSolidDomain.h"
-#include "FEBioMech/FEIsotropicElastic.h"
 #include "FEBioMech/FEMechModel.h"
 #include "FEBioMech/FEResidualVector.h"
 #include "FEBioMech/FERigidBody.h"
@@ -23,12 +23,15 @@
 #include "FECore/FESurfaceLoad.h"
 #include "FECore/log.h"
 
+#include <math.h>       /* pow */
 
 //-----------------------------------------------------------------------------
 // define the parameter list
 BEGIN_FECORE_CLASS(FEExplicitSolidSolver2, FESolver)
 	ADD_PARAMETER(m_mass_lumping, "mass_lumping");
 	ADD_PARAMETER(m_dyn_damping, "dyn_damping");
+	ADD_PARAMETER(m_bv_c1, "bulk_viscosity_c1");
+	ADD_PARAMETER(m_bv_c2, "bulk_viscosity_c2");
 	ADD_PARAMETER(m_print_stride, "print_stride");
 	ADD_PARAMETER(m_adjust_step_size_safety, FE_RANGE_RIGHT_OPEN(0.0, 1.0), "adjust_step_size_safety");
 	ADD_PARAMETER(m_adjust_step_size_stride, "adjust_step_size_stride");
@@ -75,7 +78,7 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 
 	// estimate global dtcrit
 	FEMesh& mesh = pfem->GetMesh();
-	double globalMinDT2 = 1e99;
+	double globalMinDT = 1e99;
 
 	// print header
 	feLogEx(pfem, "\n");
@@ -88,14 +91,14 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 	for (int nd = 0; nd < mesh.Domains(); ++nd)
 	{		
 
-		double domMinWaveSpd2 = 1e99;
-		double domMinDT2 = 1e99;
+		double domMinWaveSpd = 1e99;
+		double domMinDT = 1e99;
 
 		// check whether it is a solid domain
 		FEElasticSolidDomain* pbd = dynamic_cast<FEElasticSolidDomain*>(&mesh.Domain(nd));
 		if (pbd)  // it is an elastic solid domain
 		{
-			FEIsotropicElastic* pme = dynamic_cast<FEIsotropicElastic*>(pbd->GetMaterial());
+			FEExplicitElastic* pme = dynamic_cast<FEExplicitElastic*>(pbd->GetMaterial());
 			if (pme) {
 				any_evaluated_domains = true;
 
@@ -105,37 +108,28 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 					FESolidElement& el = pbd->Element(iel);
 
                     // get minimum edge lenght (squared)    
-                    double h2 = get_elem_hmin2_alt(mesh, el);
+                    double h = get_elem_hmin_alt(mesh, el);
 
 					// loop Gauss points
 					int nint = el.GaussPoints();
 					for (int j = 0; j < nint; ++j)
 					{
 
-						// get material parameters
-						FEMaterialPoint* pt = el.GetMaterialPoint(j);
-						double mE = pme->m_E(*pt);
-						double mv = pme->m_v(*pt);
-						double dens = pme->Density(*pt);
-
-						// lame parameters
-    					double lam = (mv*mE/((1+mv)*(1-2*mv)));
-    					double mu  = (0.5*mE/(1+mv));
-
 						// wavespeed
-						double waveSpd2 = (lam+2*mu) / dens;
-						if (waveSpd2 < domMinWaveSpd2) domMinWaveSpd2 = waveSpd2;
+						FEMaterialPoint* mp = el.GetMaterialPoint(j);
+						double waveSpd = pme->WaveSpeed(*mp);
+						if (waveSpd < domMinWaveSpd) domMinWaveSpd = waveSpd;
 
 						// time step
-						double dt2 = 4.0 * h2 / waveSpd2; // 4=2**2 -> scheme factor
-						if (dt2 < domMinDT2) domMinDT2 = dt2;
+						double dt = 2.0 * h / waveSpd; // 2 -> scheme factor
+						if (dt < domMinDT) domMinDT = dt;
 
 					} // for gauss point
 				} // for element
 
-				if (domMinDT2 < globalMinDT2) globalMinDT2 = domMinDT2;
+				if (domMinDT < globalMinDT) globalMinDT = domMinDT;
 				// print domain stats
-				feLogEx(pfem, "%-19s %-7.2e %-7.2e\n", mesh.Domain(nd).GetName().c_str(), sqrt(domMinWaveSpd2), sqrt(domMinDT2));
+				feLogEx(pfem, "%-19s %-7.2e %-7.2e\n", mesh.Domain(nd).GetName().c_str(), domMinWaveSpd, domMinDT);
 			}  // if isotropic elastic material
 		} // if elastic domain
 	} // for domain
@@ -148,7 +142,7 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 	}
 
 	// update critical time step size
-	dtcrit = sqrt(globalMinDT2);
+	dtcrit = globalMinDT;
 	psolver->m_dtcrit = dtcrit;	
 	feLogEx(pfem, "Global stable time step size: %7.2e\n", dtcrit);
 
@@ -181,6 +175,9 @@ FEExplicitSolidSolver2::FEExplicitSolidSolver2(FEModel* pfem) :
 	m_adjust_step_size_safety = 0.8;  // default safety factor for limiting time step size
 	m_adjust_step_size_stride = 1;  // by default we adjust time step every step
 	m_print_stride = 1;  // by default we print to screen every step
+
+	m_bv_c1 = 0.06;
+	m_bv_c2 = 1.44;
 
 	// Allocate degrees of freedom
 	DOFS& dofs = pfem->GetDOFS();
@@ -706,6 +703,9 @@ void FEExplicitSolidSolver2::Update(vector<double>& ui)
 
 	// update element stresses
 	fem.Update();
+
+	// TODO: add bulk viscosity
+	UpdateExplicitMaterialPoints();
 }
 
 //-----------------------------------------------------------------------------
@@ -1070,6 +1070,8 @@ void FEExplicitSolidSolver2::PrepStep()
 	for (i=0; i<mesh.Domains(); ++i) mesh.Domain(i).PreSolveUpdate(tp);
 
 	fem.Update();
+	// UpdateBulkViscosity();
+
 }
 
 //-----------------------------------------------------------------------------
@@ -1094,6 +1096,7 @@ bool FEExplicitSolidSolver2::DoSolve()
 
 	// collect accelerations, velocities, displacements
 	vector<double> an(m_neq, 0.0), vn(m_neq, 0.0), un(m_neq, 0.0);
+//#pragma omp parallel for
 	for (int i = 0; i < mesh.Nodes(); ++i)
 	{
 		FENode& node = mesh.Node(i);
@@ -1128,23 +1131,20 @@ bool FEExplicitSolidSolver2::DoSolve()
 		if ((n = RB.m_LM[5]) >= 0) { un[n] = RB.m_du[n]; vn[n] = RB.m_wt.z; an[n] = RB.m_alt.z; }
 	}
 
-	// velocity predictor
+	// predictor
 	vector<double> v_pred(m_neq, 0.0);
+//#pragma omp parallel for
 	for (int i = 0; i < m_neq; ++i)
 	{
-		v_pred[i] = vn[i] + an[i] * dt*0.5;
-	}
-
-	// update displacements
-	for (int i = 0; i < m_neq; ++i)
-	{
-		m_ui[i] = dt * v_pred[i];
+		v_pred[i] = vn[i] + an[i] * dt*0.5; // update velocity
+		m_ui[i] = dt * v_pred[i]; // update displacements
 	}
 	Update(m_ui);
 
 	// evaluate acceleration
 	Residual(m_R1);
 	vector<double> anp1(m_neq);
+//#pragma omp parallel for
 	for (int i = 0; i < m_neq; ++i) // hjs: use nreq
 	{
 		anp1[i] = m_R1[i] * m_Mi[i];
@@ -1195,6 +1195,7 @@ bool FEExplicitSolidSolver2::DoSolve()
 
 	// update velocity
 	vector<double> vnp1(m_neq, 0.0);
+//#pragma omp parallel for
 	for (int i = 0; i < m_neq; ++i)
 	{
 		vnp1[i] = v_pred[i] + anp1[i]*dt*0.5;
@@ -1204,6 +1205,7 @@ bool FEExplicitSolidSolver2::DoSolve()
 	m_niter++;
 
 	// scatter velocity and accelerations
+//#pragma omp parallel for
 	for (int i = 0; i < mesh.Nodes(); ++i)
 	{
 		FENode& node = mesh.Node(i);
@@ -1378,4 +1380,42 @@ void FEExplicitSolidSolver2::NonLinearConstraintForces(FEGlobalVector& R, const 
 		FENLConstraint* plc = fem.NonlinearConstraint(i);
 		if (plc->IsActive()) plc->LoadVector(R, tp);
 	}
+}
+
+void FEExplicitSolidSolver2::UpdateExplicitMaterialPoints(){
+	
+	FEModel& fem = *GetFEModel();
+	FEMesh& mesh = fem.GetMesh();
+
+	// loop all domains
+	for (int nd = 0; nd < mesh.Domains(); ++nd)
+	{		
+		// check whether it is a solid domain
+		FEElasticSolidDomain* pbd = dynamic_cast<FEElasticSolidDomain*>(&mesh.Domain(nd));
+		if (pbd)  // it is an elastic solid domain
+		{
+			FEExplicitElastic* pme = dynamic_cast<FEExplicitElastic*>(pbd->GetMaterial());
+			if (pme) {
+
+				// loop over all the elements	
+				for (int iel = 0; iel < pbd->Elements(); ++iel)
+				{
+					FESolidElement& el = pbd->Element(iel);
+                    
+					// get characteristic element lenght
+                    double h = pow(get_elem_volume(mesh, el), 1./3.);
+
+					// loop Gauss points
+					int nint = el.GaussPoints();
+					for (int j = 0; j < nint; ++j)
+					{
+						FEMaterialPoint& mp = *el.GetMaterialPoint(j);
+						FEExplicitMaterialPoint& pt = *(mp.ExtractData<FEExplicitMaterialPoint>());
+						pt.m_h = h;
+					} // for gauss point
+				} // for element
+			}  // if explicit elastic material
+		} // if elastic solid domain
+	} // for domain
+
 }

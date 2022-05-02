@@ -2,6 +2,7 @@
 #include "FEExplicitSolidSolver2.h"
 #include "FEExplicitData.h"
 #include "FEScaledDensityMapGenerator.h"
+#include "FEExplicitElastic.h"
 
 FECORE_PLUGIN int GetSDKVersion()
 {
@@ -33,6 +34,9 @@ FECORE_PLUGIN void PluginInitialize(FECoreKernel& fecore)
 	
 	// Solver classes
 	REGISTER_FECORE_CLASS(FEExplicitSolidSolver2, "explicit-solid2");
+
+	// Materials
+	REGISTER_FECORE_CLASS(FEExplicitElastic, "explicit elastic");
 
 	// Derived from FENodeLogData
 	REGISTER_FECORE_CLASS(FENodeForceX, "Rx2");
