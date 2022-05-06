@@ -1,5 +1,6 @@
 #include "FEExplicitData.h"
 #include "FEExplicitSolidSolver2.h"
+#include "FECore/FESolidElement.h"
 #include "FECore/FEModel.h"
 #include "FECore/FEAnalysis.h"
 #include "FEBioMech/FEElasticMaterial.h"
@@ -62,4 +63,23 @@ double FELogElemVolumetricStrainRate::value(FEElement& el)
 		val += pt.RateOfDeformation().tr();
 	}
 	return val / (double) nint;
+}
+
+//-----------------------------------------------------------------------------
+double FELogElemVolume::value(FEElement& el)
+{
+	FESolidElement* sel = dynamic_cast<FESolidElement*>(&el);
+	if (sel) {
+		double val = 0.0;
+		int nint = sel->GaussPoints();
+		double* w = sel->GaussWeights();
+		for (int i=0; i<nint; ++i)
+		{
+			FEElasticMaterialPoint& pt = *el.GetMaterialPoint(i)->ExtractData<FEElasticMaterialPoint>();		
+			val += pt.m_J*w[i];
+		}
+		return val;
+	} else {
+		return 0.0;
+	}
 }

@@ -44,6 +44,7 @@ FECORE_PLUGIN void PluginInitialize(FECoreKernel& fecore)
 	REGISTER_FECORE_CLASS(FENodeForceZ, "Rz2");
 
 	// Derived from FENodeLogData
+	REGISTER_FECORE_CLASS(FELogElemVolume, "V");
 	REGISTER_FECORE_CLASS(FELogElemVolumetricStrainRate, "dVdt");
 
 	// Derived from FEDataGenerator

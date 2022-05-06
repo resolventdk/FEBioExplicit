@@ -41,3 +41,11 @@ public:
 	FELogElemVolumetricStrainRate(FEModel* pfem) : FELogElemData(pfem){}
 	double value(FEElement& el);
 };
+
+//-----------------------------------------------------------------------------
+class FELogElemVolume: public FELogElemData
+{ 
+public: 
+	FELogElemVolume(FEModel* pfem) : FELogElemData(pfem){}
+	double value(FEElement& el);
+};
