@@ -2,6 +2,7 @@
 #include "FEExplicitSolidSolver2.h"
 #include "FECore/FEModel.h"
 #include "FECore/FEAnalysis.h"
+#include "FEBioMech/FEElasticMaterial.h"
 
 //-----------------------------------------------------------------------------
 double FENodeForceX::value(int nnode) 
@@ -48,4 +49,17 @@ double FENodeForceZ::value(int nnode)
 		return (-id[2] - 2 >= 0 ? Fr[-id[2]-2] : 0);
 	}
 	return 0;
+}
+
+//-----------------------------------------------------------------------------
+double FELogElemVolumetricStrainRate::value(FEElement& el)
+{
+	double val = 0.0;
+	int nint = el.GaussPoints();
+	for (int i=0; i<nint; ++i)
+	{
+		FEElasticMaterialPoint& pt = *el.GetMaterialPoint(i)->ExtractData<FEElasticMaterialPoint>();		
+		val += pt.RateOfDeformation().tr();
+	}
+	return val / (double) nint;
 }

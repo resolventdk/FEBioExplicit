@@ -652,6 +652,7 @@ bool FEExplicitSolidSolver2::Init()
 	m_Mi.assign(neq, 0.0); // hjs: use nreq
 
 	GetFEModel()->Update();
+	UpdateExplicitMaterialPoints();
 
 	// we need to fill the total displacement vector m_Ut
 	FEModel& fem = *GetFEModel();
@@ -716,8 +717,8 @@ void FEExplicitSolidSolver2::Update(vector<double>& ui)
 	// update element stresses
 	fem.Update();
 
-	// TODO: add bulk viscosity
-	UpdateExplicitMaterialPoints();
+	// // TODO: add bulk viscosity
+	// UpdateExplicitMaterialPoints();
 }
 
 //-----------------------------------------------------------------------------
