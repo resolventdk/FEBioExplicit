@@ -255,6 +255,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 	vector <int> lm;
 	vector <double> el_lumped_mass;
 
+
 	// loop over all domains
 	if (m_mass_lumping == NO_MASS_LUMPING)
 	{
@@ -265,11 +266,16 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 	}
 	else if (m_mass_lumping == ROW_SUM_LUMPING)
 	{
+
+		feLog("\n");
+		feLog("Domain inertia\n");
+		feLog("===========================\n");
+		feLog("Domain              Mass   \n");
 		for (int nd = 0; nd < mesh.Domains(); ++nd)
 		{
 			// check whether it is a solid domain
 			FEElasticSolidDomain* pbd = dynamic_cast<FEElasticSolidDomain*>(&mesh.Domain(nd));
-			if (pbd)  // it is an elastic solid domain
+			if (pbd && !dynamic_cast<FERigidMaterial*>(pbd->GetMaterial()))  // it is an elastic solid domain			
 			{
 				FESolidMaterial* pme = dynamic_cast<FESolidMaterial*>(pbd->GetMaterial());
 
@@ -277,6 +283,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 				vec3d r0[FEElement::MAX_NODES];
 
 				// loop over all the elements
+				double Md = 0.0;  // domain total mass
 				for (int iel = 0; iel < pbd->Elements(); ++iel)
 				{
 					FESolidElement& el = pbd->Element(iel);
@@ -315,6 +322,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 							el_lumped_mass[3 * i + 1] += kab;
 							el_lumped_mass[3 * i + 2] += kab;
 						}
+						Md += el_lumped_mass[3 * i];
 					}
 
 					// assemble element matrix into inv_mass vector 
@@ -347,11 +355,19 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 					}
 
 				} // loop over elements
+			
+				// log domain mass
+				feLog("%-19s %-7.2e\n", mesh.Domain(nd).GetName().c_str(), Md);
+			
 			}
 			else if (dynamic_cast<FEElasticShellDomain*>(&mesh.Domain(nd)))
 			{
 				FEElasticShellDomain* psd = dynamic_cast<FEElasticShellDomain*>(&mesh.Domain(nd));
 				FESolidMaterial* pme = dynamic_cast<FESolidMaterial*>(psd->GetMaterial());
+				
+				if (!dynamic_cast<FERigidMaterial*>(psd->GetMaterial()))  // if non-rigid material
+				{
+
 				// loop over all the elements
 				for (int iel = 0; iel < psd->Elements(); ++iel)
 				{
@@ -378,6 +394,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 							el_lumped_mass[i] += kab;
 						}
 					}
+
 					// assemble element matrix into inv_mass vector 
 					Mi.Assemble(el.m_node, lm, el_lumped_mass);
 
@@ -408,6 +425,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 					}
 
 				}
+				}  // if non-rigid
 			}
 			else
 			{
@@ -421,11 +439,12 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 		{
 			// check whether it is a solid domain
 			FEElasticSolidDomain* pbd = dynamic_cast<FEElasticSolidDomain*>(&mesh.Domain(nd));
-			if (pbd)  // it is an elastic solid domain
+			if (pbd && !dynamic_cast<FERigidMaterial*>(pbd->GetMaterial()))  // it is an elastic solid domain
 			{
 				FESolidMaterial* pme = dynamic_cast<FESolidMaterial*>(pbd->GetMaterial());
 
 				// loop over all the elements
+				double Md = 0.0;  // domain total mass
 				for (int iel = 0; iel < pbd->Elements(); ++iel)
 				{
 					FESolidElement& el = pbd->Element(iel);
@@ -455,6 +474,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 								me[i][j] += kab;
 							}
 					}
+					Md += Me;
 
 					// calculate sum of diagonals
 					double S = 0.0;
@@ -500,12 +520,20 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 					}
 
 				} // loop over elements
+
+				// log domain mass
+				feLog("%-19s %-7.2e\n", mesh.Domain(nd).GetName().c_str(), Md);
+
 			}
 			else if(dynamic_cast<FEElasticShellDomain*>(&mesh.Domain(nd)))
 			{
 				FEElasticShellDomain* psd = dynamic_cast<FEElasticShellDomain*>(&mesh.Domain(nd));
 				FESolidMaterial* pme = dynamic_cast<FESolidMaterial*>(psd->GetMaterial());
+				if (!dynamic_cast<FERigidMaterial*>(psd->GetMaterial()))  // if non-rigid material
+				{
+
 				// loop over all the elements
+				double Md = 0.0;  // domain total mass
 				for (int iel = 0; iel < psd->Elements(); ++iel)
 				{
 					FEShellElement& el = psd->Element(iel);
@@ -531,6 +559,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 						double detJ0 = psd->detJ0(el, n) * el.GaussWeights()[n];
 						Me += d * detJ0 * w[n];
 					}
+					Md += Me;
 
 					// calculate sum of diagonals
 					double S = 0.0;
@@ -574,6 +603,11 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 					}
 
 				}
+
+				// log domain mass
+				feLog("%-19s %-7.2e\n", mesh.Domain(nd).GetName().c_str(), Md);
+				
+				}  // if non-rigid material
 			}
 			else
 			{
@@ -595,6 +629,24 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 //		if (m_Mi[i] <= 0.0) return false;
 		if (m_Mi[i] != 0.0) m_Mi[i] = 1.0 / m_Mi[i];
 	}
+
+	// also log rigid body inertia now that we have added that of rigified nodes
+	const int NRB = fem.RigidBodies();
+	if (NRB > 0){
+		feLog("\n");
+		feLog("Rigid body inertia\n");
+		feLog("================================================================================\n");
+		feLog("Domain              Mass     MoI_xx   MoI_yy   MoI_zz   MoI_xy   MoI_yz   MoI_xz\n");
+		for (int i=0; i<NRB; ++i)
+		{
+			FERigidBody& RB = *fem.GetRigidBody(i);
+			feLog("%-19s %-7.2e %-7.2e %-7.2e %-7.2e %-7.2e %-7.2e %-7.2e\n", 
+			RB.GetName().c_str(), RB.m_mass, 
+			RB.m_moi.xx(), RB.m_moi.yy(), RB.m_moi.zz(),
+			RB.m_moi.xy(), RB.m_moi.yz(), RB.m_moi.xz());
+		}
+	}
+	feLog("\n");
 
 	return true;
 }
