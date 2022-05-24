@@ -79,11 +79,14 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 	FEMesh& mesh = pfem->GetMesh();
 	double globalMinDT = 1e99;
 
+	// sum strain energy while we are at it...
+	double seTotal = 0.0;
+
 	// print header
 	feLogEx(pfem, "\n");
 	feLogEx(pfem, "Stable time step size estimation\n");
 	feLogEx(pfem, "===========================================================================\n");
-	feLogEx(pfem, "Domain              Wavespeed Stepsize\n");
+	feLogEx(pfem, "Domain              Wavespeed Stepsize Strain-energy\n");
 
 	// loop all domains
 	bool any_evaluated_domains = false;
@@ -106,6 +109,7 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 					any_evaluated_domains = true;
 
 					// loop over all the elements	
+					double seDom = 0.0;  // domain strain energy
 					for (int iel = 0; iel < pbd->Elements(); ++iel)
 					{
 						FESolidElement& el = pbd->Element(iel);
@@ -113,8 +117,9 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 						// get minimum edge lenght (squared)    
 						double h = get_elem_hmin_alt(mesh, el);
 
-						// loop Gauss points
+						// loop Gauss points				
 						int nint = el.GaussPoints();
+						double* gw = el.GaussWeights();
 						for (int j = 0; j < nint; ++j)
 						{
 
@@ -136,12 +141,16 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 							double dt = 2.0 * h / waveSpd; // 2 -> scheme factor
 							if (dt < domMinDT) domMinDT = dt;
 
-						} // for gauss point
-					} // for element
+							// sum strain energy
+							double detJ0 = pbd->detJ0(el, j);  // should it be detJt or detJ0
+							seDom += pmi->StrainEnergyDensity(mp)*detJ0*gw[j];		
 
+						} // for gauss point						
+					} // for element
+					seTotal += seDom;
 					if (domMinDT < globalMinDT) globalMinDT = domMinDT;
 					// print domain stats
-					feLogEx(pfem, "%-19s %-7.2e %-7.2e\n", mesh.Domain(nd).GetName().c_str(), domMinWaveSpd, domMinDT);
+					feLogEx(pfem, "%-19s %-7.2e %-7.2e %-7.2e\n", mesh.Domain(nd).GetName().c_str(), domMinWaveSpd, domMinDT, seDom);
 				} else {  // if actual elastic material is isotropic elastic
 					feLogErrorEx(pfem, "Wavespeed calculation of other materials than 'isotropic elastic' not unspoorted!");
 				}
@@ -168,6 +177,7 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 		pstep->m_dt = safety*dtcrit;
 		feLogEx(pfem, "Setting time step size: %7.2e\n", safety*dtcrit);
 	}
+	feLogEx(pfem, "Total strain energy: %7.2e\n", seTotal);
 	feLogEx(pfem, "\n");
 
 	return true;
@@ -627,7 +637,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 	for (int i = 0; i < m_Mi.size(); ++i)
 	{
 //		if (m_Mi[i] <= 0.0) return false;
-		if (m_Mi[i] != 0.0) m_Mi[i] = 1.0 / m_Mi[i];
+		if (m_Mi[i] > 1.0e-12) m_Mi[i] = 1.0 / m_Mi[i];
 	}
 
 	// also log rigid body inertia now that we have added that of rigified nodes
@@ -1210,10 +1220,22 @@ bool FEExplicitSolidSolver2::DoSolve()
 	Residual(m_R1);
 	vector<double> anp1(m_neq);
 //#pragma omp parallel for
-	for (int i = 0; i < m_neq; ++i) // hjs: use nreq
+	for (int i = 0; i < m_nreq; ++i) // regular equations only
 	{
 		anp1[i] = m_R1[i] * m_Mi[i];
 	}
+
+	// update velocity
+	vector<double> vnp1(m_neq, 0.0);
+//#pragma omp parallel for
+	double ke = 0.0; // kinetic energy
+	for (int i = 0; i < m_nreq; ++i)  // regular equations only
+	{
+		vnp1[i] = v_pred[i] + anp1[i]*dt*0.5;
+		ke += 0.5 * vnp1[i]*vnp1[i] / m_Mi[i];
+	}
+
+	// TODO hjs: is there other non-regular equations than the rigid ones we are missing??
 
 	// handle rigid bodies, (if not constrained)
 	for (int i=0; i<fem.RigidBodies(); ++i)
@@ -1226,10 +1248,22 @@ bool FEExplicitSolidSolver2::DoSolve()
 		double M = RB.m_mass;
 		double M_inv = 1.0 / M; 
 
-		// compute translational acceleration and store in vector
-		if ((n = RB.m_LM[0]) >= 0) anp1[n] = m_R1[n] * M_inv;
-		if ((n = RB.m_LM[1]) >= 0) anp1[n] = m_R1[n] * M_inv;
-		if ((n = RB.m_LM[2]) >= 0) anp1[n] = m_R1[n] * M_inv;
+		// compute translational acceleration and store in vector, update velocity add contribute to kinetic energy
+		if ((n = RB.m_LM[0]) >= 0) {
+			anp1[n] = m_R1[n] * M_inv; 
+			vnp1[n] = v_pred[n] + anp1[n]*dt*0.5; 
+			ke += 0.5 * vnp1[n]*vnp1[n] * M;
+		}
+		if ((n = RB.m_LM[1]) >= 0) {
+			anp1[n] = m_R1[n] * M_inv; 
+			vnp1[n] = v_pred[n] + anp1[n]*dt*0.5; 
+			ke += 0.5 * vnp1[n]*vnp1[n] * M;
+		}
+		if ((n = RB.m_LM[2]) >= 0) {
+			anp1[n] = m_R1[n] * M_inv; 
+			vnp1[n] = v_pred[n] + anp1[n]*dt*0.5; 
+			ke += 0.5 * vnp1[n]*vnp1[n] * M;
+		}
 
 		// If all rotational dofs are constrained, do not try to compute angular acceleration
 		if ( RB.m_LM[3] < 0 &&  RB.m_LM[4] < 0 && RB.m_LM[5] < 0) continue;
@@ -1250,21 +1284,19 @@ bool FEExplicitSolidSolver2::DoSolve()
 		n = RB.m_LM[4]; RB_torque.y = m_R1[n];
 		n = RB.m_LM[5]; RB_torque.z = m_R1[n];
 
-		// compute angular acceleration and store in vector
-		vec3d RB_al = Jt_inv * RB_torque;		
-		n = RB.m_LM[3]; anp1[n] = RB_al.x;
-		n = RB.m_LM[4]; anp1[n] = RB_al.y;
-		n = RB.m_LM[5]; anp1[n] = RB_al.z;
-		
+		// compute angular acceleration and store in vector and update velocity
+		vec3d RB_al = Jt_inv * RB_torque;	
+		vec3d RB_w = vec3d(0.0, 0.0, 0.0);	// angular velocity
+		n = RB.m_LM[3]; anp1[n] = RB_al.x; vnp1[n] = v_pred[n] + anp1[n]*dt*0.5; RB_w.x = vnp1[n];
+		n = RB.m_LM[4]; anp1[n] = RB_al.y; vnp1[n] = v_pred[n] + anp1[n]*dt*0.5; RB_w.y = vnp1[n];
+		n = RB.m_LM[5]; anp1[n] = RB_al.z; vnp1[n] = v_pred[n] + anp1[n]*dt*0.5; RB_w.z = vnp1[n];
+
+		// kinetic energy
+		ke += 0.5 * (RB_w * (Jt * RB_w)); 
+
 	}
 
-	// update velocity
-	vector<double> vnp1(m_neq, 0.0);
-//#pragma omp parallel for
-	for (int i = 0; i < m_neq; ++i)
-	{
-		vnp1[i] = v_pred[i] + anp1[i]*dt*0.5;
-	}
+	feLog("Total kinetic energy: %7.2e\n", ke);
 
 	// increase iteration number
 	m_niter++;
