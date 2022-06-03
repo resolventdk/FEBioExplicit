@@ -1,4 +1,5 @@
 #include "FEExplicitSolidDomain.h"
+#include "FEBioMech/FEBioMech.h"
 #include "FEBioMech/FEElasticSolidDomain.h"
 #include "FEBioMech/FEElasticMaterial.h"
 #include "FEBioMech/FEIsotropicElastic.h"
@@ -6,7 +7,6 @@
 #include <FECore/FEModel.h>
 #include <FECore/FEAnalysis.h>
 #include <FECore/sys.h>
-#include "FEBioMech/FEBioMech.h"
 
 //-----------------------------------------------------------------------------
 //! constructor

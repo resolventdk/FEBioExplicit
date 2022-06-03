@@ -78,12 +78,13 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 	// estimate global dtcrit
 	FEMesh& mesh = pfem->GetMesh();
 	double globalMinDT = 1e99;
+	int globalCritElId = 0;
 
 	// print header
 	feLogEx(pfem, "\n");
 	feLogEx(pfem, "Stable time step size estimation\n");
-	feLogEx(pfem, "======================================\n");
-	feLogEx(pfem, "Domain              Wavespeed Stepsize\n");
+	feLogEx(pfem, "=================================================\n");
+	feLogEx(pfem, "Domain              Wavespeed Stepsize CritElemId\n");
 
 	// loop all domains
 	bool any_evaluated_domains = false;
@@ -91,7 +92,8 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 	{		
 
 		double domMinWaveSpd = 1e99;
-		double domMinDT = 1e99;
+		double domMinDT = 1e99;	
+		int domCritElId = 0;
 
 		// check whether it is a solid domain
 		FEElasticSolidDomain* pbd = dynamic_cast<FEElasticSolidDomain*>(&mesh.Domain(nd));
@@ -132,13 +134,21 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 
 							// time step
 							double dt = 2.0 * h / waveSpd; // 2 -> scheme factor
-							if (dt < domMinDT) domMinDT = dt;
+							if (dt < domMinDT) {
+								domMinDT = dt;
+								domCritElId = el.GetID();
+							}
 
 						} // for gauss point						
 					} // for element
-					if (domMinDT < globalMinDT) globalMinDT = domMinDT;
+					if (domMinDT < globalMinDT) {
+						globalMinDT = domMinDT;
+						globalCritElId = domCritElId;
+					}
 					// print domain stats
-					feLogEx(pfem, "%-19s %-7.2e %-7.2e\n", mesh.Domain(nd).GetName().c_str(), domMinWaveSpd, domMinDT);
+					feLogEx(pfem, "%-19s %-7.2e  %-7.2e %d\n", 
+							mesh.Domain(nd).GetName().c_str(), 
+							domMinWaveSpd, domMinDT, domCritElId);
 				} else {  // if actual elastic material is isotropic elastic
 					feLogErrorEx(pfem, "Wavespeed calculation of other materials than 'isotropic elastic' not unspoorted!");
 			} // if explicit elastic material
@@ -152,10 +162,13 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 		return true;
 	}
 
+	// print global stats
+	feLogEx(pfem, "Global stable time step size: %7.2e\n", globalMinDT);
+	feLogEx(pfem, "Global critical element id: %d\n", globalCritElId);
+
 	// update critical time step size
 	dtcrit = globalMinDT;
-	psolver->m_dtcrit = dtcrit;	
-	feLogEx(pfem, "Global stable time step size: %7.2e\n", dtcrit);
+	psolver->m_dtcrit = dtcrit;			
 
 	// enforce time step size unless next point is a must point and dt < dtcrit*safety
 	if ((pstep->m_dt < safety*dtcrit) && (pstep->m_timeController) && (pstep->m_timeController->m_nmust >= 0)) {
