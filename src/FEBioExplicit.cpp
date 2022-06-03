@@ -2,7 +2,8 @@
 #include "FEExplicitSolidSolver2.h"
 #include "FEExplicitData.h"
 #include "FEScaledDensityMapGenerator.h"
-#include "FEExplicitElastic.h"
+#include "FEExplicitSolidDomain.h"
+#include "FEExplicitDomainFactory.h"
 
 FECORE_PLUGIN int GetSDKVersion()
 {
@@ -31,12 +32,13 @@ FECORE_PLUGIN void PluginInitialize(FECoreKernel& fecore)
 
 	fecore.CreateModule("explicit-solid2");
 	fecore.SetModuleDependency("solid");
-	
+
+	// Domain factory
+	fecore.RegisterDomain(new FEExplicitDomainFactory, true);  
+	REGISTER_FECORE_CLASS(FEExplicitSolidDomain, "explicit-solid");
+
 	// Solver classes
 	REGISTER_FECORE_CLASS(FEExplicitSolidSolver2, "explicit-solid2");
-
-	// Materials
-	REGISTER_FECORE_CLASS(FEExplicitElastic, "explicit elastic");
 
 	// Derived from FENodeLogData
 	REGISTER_FECORE_CLASS(FENodeForceX, "Rx2");
