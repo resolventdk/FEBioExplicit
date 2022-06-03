@@ -150,8 +150,10 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 							mesh.Domain(nd).GetName().c_str(), 
 							domMinWaveSpd, domMinDT, domCritElId);
 				} else {  // if actual elastic material is isotropic elastic
-					feLogErrorEx(pfem, "Wavespeed calculation of other materials than 'isotropic elastic' not unspoorted!");
-			} // if explicit elastic material
+					feLogErrorEx(pfem, 
+					"Wavespeed calculation for domain '%s' with mat. other than 'isotropic elastic' is not supported!", 
+					mesh.Domain(nd).GetName().c_str());
+				} // if explicit elastic material
 		} // if elastic domain
 	} // for domain
 	feLogEx(pfem, "\n");
