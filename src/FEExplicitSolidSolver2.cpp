@@ -95,9 +95,9 @@ bool time_step_limiter_cb(FEModel* pfem, unsigned int nwen, void* pd)
 		double domMinDT = 1e99;	
 		int domCritElId = 0;
 
-		// check whether it is a solid domain
+		// check whether it is an elastic solid domain
 		FEElasticSolidDomain* pbd = dynamic_cast<FEElasticSolidDomain*>(&mesh.Domain(nd));
-		if (pbd)  // it is an elastic solid domain
+		if (pbd && !dynamic_cast<FERigidMaterial*>(pbd->GetMaterial()))  // it is an elastic solid domain
 		{
 				FEIsotropicElastic* pmi = dynamic_cast<FEIsotropicElastic*>(pbd->GetMaterial());
 				if (pmi){  // the actual elastic material is isotropic elastic	
