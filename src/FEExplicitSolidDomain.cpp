@@ -9,6 +9,12 @@
 #include <FECore/sys.h>
 
 //-----------------------------------------------------------------------------
+BEGIN_FECORE_CLASS(FEExplicitSolidDomain, FEElasticSolidDomain)
+	ADD_PARAMETER(m_bv_c1, "lin_bulk_visc");
+	ADD_PARAMETER(m_bv_c2, "quad_bulk_visc");
+END_FECORE_CLASS();
+
+//-----------------------------------------------------------------------------
 //! constructor
 //! Some derived classes will pass 0 to the pmat, since the pmat variable will be
 //! to initialize another material. These derived classes will set the m_pMat variable as well.
@@ -39,8 +45,12 @@ void FEExplicitSolidDomain::Update(const FETimeInfo& tp){
 //! Update element state data (mostly stresses, but some other stuff as well)
 void FEExplicitSolidDomain::UpdateElementStress(int iel, const FETimeInfo& tp)
 {
+
+	// double m_bv_c1 = 0.06;
+	// double m_bv_c2 = 1.44;
+
     double dt = tp.timeIncrement;
-    
+
 	FEIsotropicElastic* pmi = dynamic_cast<FEIsotropicElastic*>(m_pMat);
 	if (!pmi){  // the actual elastic material is isotropic elastic
 		feLogError("Only isotropic elastic material supported!");

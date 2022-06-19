@@ -7,4 +7,4 @@ Reworked version of FEBio's explicit solver
 * [x] Fix rigid body equations not being solved
 * [ ] Keep track of stable time step for contact interface, adjust penalty to preserve same stable time step
 * [ ] Implement damping in contact interface
-* [ ] Implement bulk viscosity damping 
+* [x] Implement bulk viscosity damping 

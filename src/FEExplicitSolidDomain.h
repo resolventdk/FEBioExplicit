@@ -19,13 +19,16 @@ public:  // overrides from MeshPartition
 
     virtual void Update(const FETimeInfo& tp);
 
-protected:
+private:
 
 	// energies
 	double m_se;
 
 	// bulk viscosity damping parameters
-	double m_bv_c1;
+	double m_dummy;  // to avoid memory corruption TODO figure out what happens
+	double m_bv_c1;  // somehow this get value 0 when #pragma omp parallel for shared(NE, berr) in FEElasticSolidDomain::Update wtf
 	double m_bv_c2;
+
+	DECLARE_FECORE_CLASS();
 
 };

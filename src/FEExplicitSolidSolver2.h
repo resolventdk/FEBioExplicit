@@ -74,8 +74,6 @@ public:
 	double      m_dtcrit;
 	double      m_adjust_step_size_safety;  //!< safety factor to critical est. time step
 	int         m_adjust_step_size_stride;  //!< how often to adjust time step size 
-	double      m_bv_c1;
-	double      m_bv_c2;	
 
 public:
 	// equation numbers
