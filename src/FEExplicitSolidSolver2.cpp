@@ -267,6 +267,10 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 
 
 	// loop over all domains
+	feLog("\n");
+	feLog("Domain inertia\n");
+	feLog("===========================\n");
+	feLog("Domain              Mass   \n");
 	if (m_mass_lumping == NO_MASS_LUMPING)
 	{
 		// use consistent mass matrix.
@@ -276,11 +280,6 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 	}
 	else if (m_mass_lumping == ROW_SUM_LUMPING)
 	{
-
-		feLog("\n");
-		feLog("Domain inertia\n");
-		feLog("===========================\n");
-		feLog("Domain              Mass   \n");
 		for (int nd = 0; nd < mesh.Domains(); ++nd)
 		{
 			// check whether it is a solid domain
@@ -474,7 +473,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 						FEMaterialPoint& mp = *el.GetMaterialPoint(n);
 						double d = pme->Density(mp);
 						double detJ0 = pbd->detJ0(el, n)*el.GaussWeights()[n];
-						Me += d * detJ0 * w[n];
+						Me += d * detJ0;
 
 						double* H = el.H(n);
 						for (int i = 0; i < neln; ++i)
@@ -567,7 +566,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 						FEMaterialPoint& mp = *el.GetMaterialPoint(n);
 						double d = pme->Density(mp);
 						double detJ0 = psd->detJ0(el, n) * el.GaussWeights()[n];
-						Me += d * detJ0 * w[n];
+						Me += d * detJ0;
 					}
 					Md += Me;
 
@@ -622,7 +621,7 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 			else
 			{
 				// TODO: we can only do solid domains right now.
-				return false;
+				// return false;
 			}
 		}
 	}
@@ -632,8 +631,18 @@ bool FEExplicitSolidSolver2::CalculateMassMatrix()
 		return false;
 	}
 
+	// // print mass matrix to file
+	// FILE * fp;
+   	// fp = fopen ("mass_matrix.dat", "w+");
+	// fprintf(fp, "dof,mass\n");
+	// for (int i = 0; i < m_Mi.size(); ++i)
+	// {
+	// 	fprintf(fp, "%d,%e\n", i, m_Mi[i]);
+	// }
+	// fclose(fp);	
+
 	// we need the inverse of the lumped masses later
-	// Also, make sure the lumped masses are positive.
+	// Also, make sure the lumped masses are positive.	
 	for (int i = 0; i < m_Mi.size(); ++i)
 	{
 //		if (m_Mi[i] <= 0.0) return false;
